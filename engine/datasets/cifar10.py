@@ -1,4 +1,5 @@
 from engine import datasets
+from engine import utils
 import torch
 import torchvision
 import torchvision.transforms as transforms
@@ -49,4 +50,4 @@ def data_loaders(batch_size=64, augmentations=[]):
 
 
 def show_images(data_loader, number=5, ncols=5, figsize=(10, 6)):
-    datasets.show_images(data_loader, mean, std, classes, number, ncols, figsize)
+    utils.show_images(data_loader, mean, std, classes, number, ncols, figsize)
