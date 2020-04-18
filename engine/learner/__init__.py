@@ -1,5 +1,6 @@
 import torch
 from tqdm import tqdm
+from engine.utils.plots import show_metrics, show_lr_metrics
 
 # properties
 cuda = torch.cuda.is_available()
@@ -146,6 +147,16 @@ def fit(model, epochs, train_loader, test_loader, loss_fn, optimizer, scheduler,
         # update model metrics dict
         model.update_train_metrics(train_loss, train_acc)
         model.update_test_metrics(val_loss, val_acc)
+
+
+def plot_metrics(model, metrics=['train_acc', 'train_loss', 'val_acc', 'val_loss'], show_lr=False, nplots=2):
+    data = []
+    for metric in metrics:
+        data.append(model.metrics[metric])
+    if show_lr:
+        show_lr_metrics(data, metrics, lr_history=model.metrics['lr'], nplots=nplots)
+    else:
+        show_metrics(data, metrics, nplots)
 
 
 def classwise_accuracy(model, test_loader, classes, device='cpu'):

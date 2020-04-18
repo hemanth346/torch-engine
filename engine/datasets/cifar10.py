@@ -1,3 +1,4 @@
+import engine.utils.plots
 from engine import datasets
 from engine import utils
 import torch
@@ -50,4 +51,4 @@ def data_loaders(batch_size=64, augmentations=[]):
 
 
 def show_images(data_loader, number=5, ncols=5, figsize=(10, 6)):
-    utils.show_images(data_loader, mean, std, classes, number, ncols, figsize)
+    engine.utils.plots.show_images(data_loader, mean, std, classes, number, ncols, figsize)
