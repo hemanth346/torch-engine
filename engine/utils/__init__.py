@@ -1,9 +1,11 @@
 import sys
 import logging
 import numpy as np
-
+import torch
 # https://stackoverflow.com/a/64130/7445772
-__all__ = ['setup_logger', 'AlbumentationToPytorchTransform', 'unnormalize_chw_image', 'unnormalize_hwc_image', 'UnNormalize']
+from torch import __init__
+
+__all__ = ['classwise_accuracy', 'get_misclassified', 'setup_logger', 'AlbumentationToPytorchTransform', 'unnormalize_chw_image', 'unnormalize_hwc_image', 'UnNormalize']
 
 
 class AlbumentationToPytorchTransform():
@@ -105,3 +107,73 @@ def setup_logger(name, log_level=logging.INFO):
     return logger  # return the logger
 
 
+def classwise_accuracy(model, test_loader, classes, device='cpu'):
+    '''
+        Class wise total accuracy
+    :param classes:
+    :return:
+    '''
+    class_total = list(0. for i in range(10))
+    class_correct = list(0. for i in range(10))
+
+    with torch.no_grad():
+        for images, labels in test_loader:
+            images, labels = images.to(device), labels.to(device)
+            outputs = model(images)
+            _, predicted = torch.max(outputs, 1)
+            c = (predicted == labels).squeeze()
+            for i in range(4):
+                label = labels[i]
+                class_correct[label] += c[i].item()
+                class_total[label] += 1
+
+    for i in range(10):
+        print(f'Accuracy of {classes[i]:<10} : {(100 * class_correct[i] / class_total[i]):.2f}%')
+
+
+def get_misclassified(model, data_loader, number=20, device='cpu'):
+    # predict_generator
+    '''
+        Generates output predictions for the input samples.
+        predict(x, batch_size=None, verbose=0, steps=None, callbacks=None,
+        max_queue_size=10, workers=1, use_multiprocessing=False)
+    '''
+
+    misclassified_data = []
+    misclassified_ground_truth = []
+    misclassified_predicted = []
+    model.eval()
+
+    count = 0
+    with torch.no_grad():
+        for data, target in data_loader:
+            # move to respective device
+            data, target = data.to(device), target.to(device)
+            # inference
+            output = model(data)
+
+            # get predicted output and the index of the max log-probability
+            pred = output.argmax(dim=1, keepdim=True)
+
+            # get misclassified list for this batch
+            misclassified_list = (target.eq(pred.view_as(target)) == False)
+            misclassified = data[misclassified_list]
+            predicted = pred[misclassified_list]
+            ground_truth = target[misclassified_list]
+            count += misclassified.shape[0]
+            # stitching together
+            misclassified_data.append(misclassified)
+            misclassified_ground_truth.append(ground_truth)
+            misclassified_predicted.append(predicted)
+            # stop after enough false positives
+            if count >= number:
+                break
+
+    # converting to torch
+    # clipping till given number if more count from batch
+    misclassified_data = torch.cat(misclassified_data)[:number]
+    misclassified_ground_truth = torch.cat(misclassified_ground_truth)[:number]
+    misclassified_predicted = torch.cat(misclassified_predicted)[:number]
+
+    # can't convert CUDA tensor to numpy during image unnorm
+    return misclassified_data.cpu(), misclassified_ground_truth.cpu(), misclassified_predicted.cpu()
