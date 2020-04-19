@@ -15,7 +15,7 @@ if seed:
 
 
 # cuda attributes
-num_workers = 0
+num_workers = 4
 pin_memory = True
 
 # dataloader cuda/cpu args

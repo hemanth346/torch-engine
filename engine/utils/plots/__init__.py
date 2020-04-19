@@ -188,6 +188,8 @@ def show_misclassified_images(images, ground_truth, predicted, classes, mean, st
     set_image_plt_param()
     number = images.shape[0]
     rows = (number // ncols) + 1
+    # can't convert CUDA tensor to numpy during image unnorm
+    images, ground_truth, predicted = images.cpu(), ground_truth.cpu(), predicted.cpu()
 
     # make a grid of subplots for images
     axes = make_grid(rows, ncols, figsize)
