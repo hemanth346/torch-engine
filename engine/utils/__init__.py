@@ -3,7 +3,7 @@ import logging
 import numpy as np
 import torch
 # https://stackoverflow.com/a/64130/7445772
-from torch import __init__
+# from torch import __init__
 
 __all__ = ['classwise_accuracy', 'get_misclassified', 'setup_logger', 'AlbumentationToPytorchTransform', 'unnormalize_chw_image', 'unnormalize_hwc_image', 'UnNormalize']
 

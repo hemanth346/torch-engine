@@ -36,6 +36,7 @@ class Learner(object):
 
     def plot_history(self, metrics=['train_acc', 'train_loss', 'val_acc', 'val_loss'],
                      show_lr=False, nplots=2):
+        # TODO : Add plot fig size
         plot_history(self.model, metrics=metrics, show_lr=show_lr, nplots=nplots)
 
     def show_misclassified(self, classes, mean, std, number=20,
@@ -64,7 +65,10 @@ class Learner(object):
 
 def load_checkpoint(learner:Learner, path):
     path = os.path.abspath(path)
-    if os.path.isfile(path) and os.path.splitext(path)[1] in ['.pt', '.pth']:
+    if os.path.splitext(path)[1] not in ['.pt', '.pth']:
+        print('Checkpoint file should end with either ".pt" or ".pth" \n Checkpoint nor created...')
+        return learner
+    if os.path.isfile(path):
         print("loading checkpoint from ", path)
         checkpoint = torch.load(path)
         learner.model.load_state_dict(checkpoint['model_state_dict'])
@@ -75,4 +79,5 @@ def load_checkpoint(learner:Learner, path):
         learner.model.metrics = checkpoint['metrics']
         print("Done.. Loaded checkpoint '{0}' (epoch {1})".format(path, checkpoint['epoch']))
     else:
-        print('No checkpoint found at ')
+        print('No checkpoint found at ', path)
+    return learner

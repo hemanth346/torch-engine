@@ -7,7 +7,8 @@ from engine.utils import unnormalize_chw_image, get_misclassified, UnNormalize a
 from engine.utils.plots.helper import show_metrics, show_lr_metrics, make_grid, set_image_plt_param
 
 
-def show_images(data_loader, mean, std, classes, number=5, ncols=5, figsize=(10, 6)):
+def show_images(data_loader, mean, std, classes,
+                number=5, ncols=5, figsize=(10, 6)):
     # torch tensors
     images, labels = next(iter(data_loader))
 
@@ -31,7 +32,8 @@ def show_images(data_loader, mean, std, classes, number=5, ncols=5, figsize=(10,
     plt.show()
 
 
-def plot_history(model, metrics=['train_acc', 'train_loss', 'val_acc', 'val_loss'], show_lr=False, nplots=2):
+def plot_history(model, metrics=['train_acc', 'train_loss', 'val_acc', 'val_loss'],
+                 show_lr=False, nplots=2):
     data = []
     for metric in metrics:
         data.append(model.metrics[metric])
@@ -41,7 +43,8 @@ def plot_history(model, metrics=['train_acc', 'train_loss', 'val_acc', 'val_loss
         show_metrics(data, metrics, nplots)
 
 
-def show_misclassified_images(model, data_loader, classes, mean, std, number=20, device='cpu', ncols=5, figsize=(10, 6)):
+def show_misclassified_images(model, data_loader, classes, mean,
+                              std, number=20, device='cpu', ncols=5, figsize=(10, 6)):
     set_image_plt_param()
     images, ground_truth, predicted = get_misclassified(model=model, data_loader=data_loader,
                                                         number=number, device=device)
@@ -65,7 +68,8 @@ def show_misclassified_images(model, data_loader, classes, mean, std, number=20,
 
 
 
-def show_gradcam(gcams, images, ground_truth, predicted, class_names, predicted, output_size=(128, 128)):
+def show_gradcam(gcams, images, ground_truth, predicted,
+                 class_names, output_size=(128, 128)):
     set_image_plt_param()
     # axes = make_grid()
 
@@ -92,14 +96,15 @@ def show_gradcam(gcams, images, ground_truth, predicted, class_names, predicted,
     # [ax.remove() for ax in axes[idx + 1:]]
     plt.show()
 
-    for idx in range()
-    pass
+    # for idx in range()
+    # pass
 
 
 # http://jonathansoma.com/lede/data-studio/classes/small-multiples/long-explanation-of-using-plt-subplots-to-create-small-multiples/
 # https://napsterinblue.github.io/notes/python/viz/subplots/
 # https://jakevdp.github.io/PythonDataScienceHandbook/04.08-multiple-subplots.html
-def PLOT(gcam_layers, images, labels, target_layers, class_names, image_size, predicted, output_size=(128, 128)):
+def PLOT(gcam_layers, images, labels, target_layers, class_names,
+         image_size, predicted, output_size=(128, 128)):
 
     rows = len(images)
     cols = len(target_layers) + 2 # label and input + layers names
@@ -129,9 +134,8 @@ def PLOT(gcam_layers, images, labels, target_layers, class_names, image_size, pr
     plt.show()
 
 
-
-
-def plot_gradcam(gcam_layers, images, target_labels, predicted_labels, class_labels, denormalize, paper_cmap=False):
+def plot_gradcam(gcam_layers, images, target_labels, predicted_labels,
+                 class_labels, denormalize, paper_cmap=False):
 
     # convert BCHW to BHWC for plotting stufffff
 
