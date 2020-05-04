@@ -124,12 +124,12 @@ def make_grid(nrows, ncols=3, title='', figsize=(6.0, 4.0)):
     :param figsize:
     :return:
     """
-    print('figsize : ', figsize)
+    # print('figsize : ', figsize)
     fig, ax = plt.subplots(nrows, ncols, figsize=figsize)
     # if title:
         # fig.suptitle(title)
     axes = ax.flatten()
-    return axes
+    return fig, axes
 
 
 def set_plt_param():
@@ -146,6 +146,8 @@ def set_plt_param():
 
 
 def set_image_plt_param():
+    # https://stackoverflow.com/a/53721862/7445772
+    # https://matplotlib.org/tutorials/introductory/customizing.html
     rc = {"axes.spines.left": False,
           "axes.spines.right": False,
           "axes.spines.bottom": False,

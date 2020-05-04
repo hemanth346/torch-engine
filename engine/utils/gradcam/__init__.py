@@ -1,20 +1,77 @@
-from torch.nn import functional as F
-import cv2
 import torch
-import matplotlib.pyplot as plt
-import numpy as np
-from engine.utils import UnNormalize as unnormalize
+from torch.nn import functional as F
 
+
+# inspired from
 # https://github.com/kazuto1011/grad-cam-pytorch/blob/fd10ff7fc85ae064938531235a5dd3889ca46fed/grad_cam.py
 
 
-class GradCAM:
-    """ Class for extracting activations and
-    registering gradients from targeted intermediate layers
-    target_layers = list of convolution layer index as shown in summary
+class _BaseWrapper(object):
+    def __init__(self, model):
+        super(_BaseWrapper, self).__init__()
+
+        # assuming all parameters are on the same device
+        self.device = next(model.parameters()).device
+
+        # save the model
+        self.model = model
+
+        # a set of hook function handlers
+        self.handlers = []
+
+    def _encode_one_hot(self, ids):
+        one_hot = torch.zeros_like(self.logits).to(self.device)
+        one_hot.scatter_(1, ids, 1.0)
+        return one_hot
+
+    def forward(self, image):
+        # get H X W
+        self.image_shape = image.shape[2:]
+
+        # apply the model
+        self.logits = self.model(image)
+
+        # get the loss by converging along all the channels, dim = CHANNEL
+        # sum along CHANNEL is going to be 1, softmax does that
+        self.probs = F.softmax(self.logits, dim=1)
+
+        # ordered results
+        return self.probs.sort(dim=1, descending=True)
+
+    def backward(self, ids):
+        '''Class-specific backpropagation'''
+
+        # convert the class id to one hot vector
+        one_hot = self._encode_one_hot(ids)
+
+        # zero out the gradients
+        self.model.zero_grad()
+
+        # calculate the gradient wrt to the class activations
+        self.logits.backward(gradient=one_hot, retain_graph=True)
+
+    def generate(self):
+        raise NotImplementedError
+
+    def remove_hook(self):
+        '''Remove all the forward/backward hook functions'''
+        for handle in self.handlers:
+            handle.remove()
+
+
+class GradCAM(_BaseWrapper):
+    """
+    "Grad-CAM: Visual Explanations from Deep Networks via Gradient-based Localization"
+    https://arxiv.org/pdf/1610.02391.pdf
+    Look at Figure 2 on page 4
     """
 
     def __init__(self, model, candidate_layers=None):
+        super(GradCAM, self).__init__(model)
+        self.fmap_pool = {}
+        self.grad_pool = {}
+        self.candidate_layers = candidate_layers  # list
+
         def save_fmaps(key):
             def forward_hook(module, input, output):
                 self.fmap_pool[key] = output.detach()
@@ -27,50 +84,19 @@ class GradCAM:
 
             return backward_hook
 
-        self.device = next(model.parameters()).device
-        self.model = model
-        self.handlers = []  # a set of hook function handlers
-        self.fmap_pool = {}
-        self.grad_pool = {}
-        self.candidate_layers = candidate_layers  # list
-
+        # If any candidates are not specified, the hook is registered to all the layers.
         for name, module in self.model.named_modules():
             if self.candidate_layers is None or name in self.candidate_layers:
-                self.handlers.append(module.register_forward_hook(save_fmaps(name)))
-                self.handlers.append(module.register_backward_hook(save_grads(name)))
-
-    def _encode_one_hot(self, ids):
-        one_hot = torch.zeros_like(self.nll).to(self.device)
-        print(one_hot.shape)
-        one_hot.scatter_(1, ids, 1.0)
-        return one_hot
-
-    def forward(self, image):
-        self.image_shape = image.shape[2:]  # HxW
-        self.nll = self.model(image)
-        # self.probs = F.softmax(self.logits, dim=1)
-        return self.nll.sort(dim=1, descending=True)  # ordered results
-
-    def backward(self, ids):
-        """
-        Class-specific backpropagation
-        """
-        one_hot = self._encode_one_hot(ids)
-        self.model.zero_grad()
-        self.nll.backward(gradient=one_hot, retain_graph=True)
-
-    def remove_hook(self):
-        """
-        Remove all the forward/backward hook functions
-        """
-        for handle in self.handlers:
-            handle.remove()
+                self.handlers.append(
+                    module.register_forward_hook(save_fmaps(name)))
+                self.handlers.append(
+                    module.register_backward_hook(save_grads(name)))
 
     def _find(self, pool, target_layer):
         if target_layer in pool.keys():
             return pool[target_layer]
         else:
-            raise ValueError("Invalid layer name: {}".format(target_layer))
+            raise ValueError(f'Invalid layer name: {target_layer}')
 
     def generate(self, target_layer):
         fmaps = self._find(self.fmap_pool, target_layer)
@@ -79,12 +105,11 @@ class GradCAM:
 
         gcam = torch.mul(fmaps, weights).sum(dim=1, keepdim=True)
         gcam = F.relu(gcam)
-        # need to capture image size duign forward pass
         gcam = F.interpolate(
             gcam, self.image_shape, mode="bilinear", align_corners=False
         )
 
-        # scale output between 0,1
+        # rescale features between 0 and 1
         B, C, H, W = gcam.shape
         gcam = gcam.view(B, -1)
         gcam -= gcam.min(dim=1, keepdim=True)[0]
@@ -94,70 +119,58 @@ class GradCAM:
         return gcam
 
 
-def GRADCAM(images, labels, learner, target_layers):
-    learner.model.eval()
-    # map input to device
-    images = torch.stack(images).to(learner.device)
-    # set up grad cam
-    gcam = GradCAM(learner.model, target_layers)
-    # forward pass
-    probs, ids = gcam.forward(images)
-    # outputs agaist which to compute gradients
-    ids_ = torch.LongTensor(labels).view(len(images), -1).to(learner.device)
-    # backward pass
-    gcam.backward(ids=ids_)
-    layers = []
-    for i in range(len(target_layers)):
-        target_layer = target_layers[i]
-        print("Generating Grad-CAM @{}".format(target_layer))
+def get_gradcam(images, labels, model, device, target_layers):
+    # move the model to device
+    model.to(device)
+
+    # set the model in evaluation mode
+    model.eval()
+
+    # get the grad cam
+    gcam = GradCAM(model=model, candidate_layers=target_layers)
+
+    # images = torch.stack(images).to(device)
+
+    # predicted probabilities and class ids
+    pred_probs, pred_ids = gcam.forward(images)
+
+    # actual class ids
+    # target_ids = torch.LongTensor(labels).view(len(images), -1).to(device)
+    target_ids = labels.view(len(images), -1).to(device)
+
+    # backward pass wrt to the actual ids
+    gcam.backward(ids=target_ids)
+
+    # we will store the layers and correspondings images activations here
+    layer_activations = {}
+
+    # fetch the grad cam layers of all the images
+    for target_layer in target_layers:
+        # logger.info(f'generating Grad-CAM for {target_layer}')
+
         # Grad-CAM
-        layers.append(gcam.generate(target_layer=target_layer))
-    # remove hooks when done
+        regions = gcam.generate(target_layer=target_layer)
+
+        layer_activations[target_layer] = regions
+
+    # we are done here, remove the hooks
     gcam.remove_hook()
-    return layers, probs, ids
+
+    # gcam_layers, predicted probability, predicted class_ids
+    return layer_activations, pred_probs, pred_ids
 
 
-# http://jonathansoma.com/lede/data-studio/classes/small-multiples/long-explanation-of-using-plt-subplots-to-create-small-multiples/
-# https://napsterinblue.github.io/notes/python/viz/subplots/
-# https://jakevdp.github.io/PythonDataScienceHandbook/04.08-multiple-subplots.html
 
-def PLOT(gcam_layers, images, labels, target_layers, class_names, image_size, predicted, output_size=(128, 128)):
-    # https://stackoverflow.com/a/53721862/7445772
-    # https://matplotlib.org/tutorials/introductory/customizing.html
-    rc = {"axes.spines.left" : False,
-      "axes.spines.right" : False,
-      "axes.spines.bottom" : False,
-      "axes.spines.top" : False,
-      "axes.grid" : False,
-      "xtick.bottom" : False,
-      "xtick.labelbottom" : False,
-      "ytick.labelleft" : False,
-      "ytick.left" : False}
-    plt.rcParams.update(rc)
 
-    rows = len(images)
-    cols = len(target_layers) + 2 # label and input + layers names
 
-    fig, axes = plt.subplots(nrows=rows, ncols=cols, figsize=(5*rows, 4*cols))
-    fig.subplots_adjust(hspace=0.01, wspace=0.01)
-    ax = axes.flatten()
+# # get the generated grad cam
+# gcam_layers, predicted_probs, predicted_classes = get_gradcam(
+#     data, target, self.trainer.model, self.trainer.device, target_layers)
+#
+# # get the denomarlization function
+# unorm = module_aug.UnNormalize(
+#     mean=self.transforms.mean, std=self.transforms.std)
+#
+# plot_gradcam(gcam_layers, data, target, predicted_classes,
+#              self.data_loader.class_names, unorm)
 
-    for image_no in range(rows):
-        col1 = image_no*cols
-
-        img = np.uint8(255 * unnormalize(images[image_no].view(image_size)))
-        #label
-        ax[col1].text(0, 0.2, f"pred={class_names[predicted[image_no][0]]}\n[actual={class_names[labels[image_no]]}]", fontsize=27)
-        # 'input_image'
-
-        for layer_no in range(len(target_layers)):
-            heatmap = 1 - gcam_layers[layer_no][image_no].cpu().numpy()[0]  # reverse the color map
-            heatmap = np.uint8(255 * heatmap)
-            heatmap = cv2.applyColorMap(heatmap, cv2.COLORMAP_JET)
-            superimposed_img = cv2.resize(cv2.addWeighted(img, 0.5, heatmap, 0.5, 0), output_size)
-            ax[col1 + 2 +layer_no].imshow(superimposed_img, interpolation='bilinear')
-        # display after resizing
-        img = cv2.resize(img, output_size)
-        ax[col1+1].imshow(img, interpolation='bilinear')
-
-    plt.show()
